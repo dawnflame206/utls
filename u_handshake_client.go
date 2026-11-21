@@ -14,10 +14,10 @@ import (
 	"io"
 	"slices"
 
+	"github.com/dawnflame206/utls/internal/fips140tls"
+	"github.com/dawnflame206/utls/internal/tls13"
 	"github.com/klauspost/compress/zstd"
 	"github.com/molecule-man/go-brrr"
-	"github.com/refraction-networking/utls/internal/fips140tls"
-	"github.com/refraction-networking/utls/internal/tls13"
 )
 
 // This function is called by (*clientHandshakeStateTLS13).readServerCertificate()

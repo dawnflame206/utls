@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/refraction-networking/utls/dicttls"
+	"github.com/dawnflame206/utls/dicttls"
 )
 
 func TestMLDSASignatureSchemeJSON(t *testing.T) {
