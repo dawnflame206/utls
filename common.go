@@ -9,6 +9,7 @@ import (
 	"container/list"
 	"context"
 	"crypto"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
@@ -974,6 +975,16 @@ type Config struct {
 	// clients, see the EncryptedClientHelloConfigList field.
 	EncryptedClientHelloKeys []EncryptedClientHelloKey
 
+	// HelloHooks optionally customize TLS 1.3 hello processing.
+	HelloHooks *HelloHooks
+
+	// ClientRecordHooks optionally customizes client-side TCP records.
+	ClientRecordHooks *ClientRecordHooks
+
+	// TLS12ClientKey optionally supplies the private key for the negotiated TLS 1.2 ECDHE group.
+	// Returning nil uses normal key generation.
+	TLS12ClientKey func(CurveID) *ecdh.PrivateKey
+
 	// mutex protects sessionTicketKeys and autoSessionTicketKeys.
 	mutex sync.RWMutex
 	// sessionTicketKeys contains zero or more ticket keys. If set, it means
@@ -1116,6 +1127,9 @@ func (c *Config) Clone() *Config {
 		KeyLogWriter:                        c.KeyLogWriter,
 		EncryptedClientHelloConfigList:      c.EncryptedClientHelloConfigList,
 		EncryptedClientHelloRejectionVerify: c.EncryptedClientHelloRejectionVerify,
+		ClientRecordHooks:                   c.ClientRecordHooks,
+		TLS12ClientKey:                      c.TLS12ClientKey,
+		HelloHooks:                          c.HelloHooks,
 		EncryptedClientHelloKeys:            c.EncryptedClientHelloKeys,
 		sessionTicketKeys:                   c.sessionTicketKeys,
 		autoSessionTicketKeys:               c.autoSessionTicketKeys,

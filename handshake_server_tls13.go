@@ -147,6 +147,10 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 		return errors.New("tls: TLS 1.3 client supports illegal compression methods")
 	}
 
+	if err := c.verifyClientHello(hs.clientHello); err != nil {
+		return err
+	}
+
 	hs.hello.random = make([]byte, 32)
 	if _, err := io.ReadFull(c.config.rand(), hs.hello.random); err != nil {
 		c.sendAlert(alertInternalError)
@@ -239,6 +243,9 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 		}
 	}
 	if clientKeyShare == nil {
+		if hooks := c.config.HelloHooks; hooks != nil && hooks.HelloRetryRequestError != nil {
+			return hooks.HelloRetryRequestError
+		}
 		ks, err := hs.doHelloRetryRequest(selectedGroup)
 		if err != nil {
 			return err
@@ -716,6 +723,11 @@ func illegalClientHelloChange(ch, ch1 *clientHelloMsg) bool {
 
 func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 	c := hs.c
+
+	if err := c.transformServerHello(hs.hello); err != nil {
+		c.sendAlert(alertInternalError)
+		return err
+	}
 
 	if hs.echContext != nil {
 		copy(hs.hello.random[32-8:], make([]byte, 8))

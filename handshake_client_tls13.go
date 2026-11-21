@@ -129,6 +129,10 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		}
 	}
 
+	if err := c.verifyServerHello(hs.serverHello); err != nil {
+		return err
+	}
+
 	if err := transcriptMsg(hs.serverHello, hs.transcript); err != nil {
 		return err
 	}
@@ -787,6 +791,12 @@ func (hs *clientHandshakeStateTLS13) readServerCertificate() error {
 	if !ok {
 		c.sendAlert(alertUnexpectedMessage)
 		return unexpectedMessageError(certVerify, msg)
+	}
+
+	// The ServerHello verifier has already authenticated this peer.
+	if c.serverHelloVerified {
+		c.peerSigAlg = certVerify.signatureAlgorithm
+		return transcriptMsg(certVerify, hs.transcript)
 	}
 
 	// See RFC 8446, Section 4.4.3.

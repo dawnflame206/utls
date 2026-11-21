@@ -72,6 +72,10 @@ type Conn struct {
 	resumptionSecret []byte
 	echAccepted      bool
 
+	serverHelloVerified     bool
+	clientRecordContext     *ClientRecordContext
+	observingClientFinished bool
+
 	// ticketKeys is the set of active session ticket keys for this
 	// connection. The first one is used to encrypt new tickets and
 	// all are tried to decrypt tickets.
@@ -686,9 +690,12 @@ func (c *Conn) readRecordOrCCS(expectChangeCipherSpec bool) error {
 
 	// Process message.
 	record := c.rawInput.Next(recordHeaderLen + n)
-	data, typ, err := c.in.decrypt(record)
+	data, typ, err := c.openClientRecord(record, handshakeComplete)
 	if err != nil {
-		return c.in.setErrorLocked(c.sendAlert(err.(alert)))
+		if a, ok := err.(alert); ok {
+			return c.in.setErrorLocked(c.sendAlert(a))
+		}
+		return c.in.setErrorLocked(err)
 	}
 	if len(data) > maxPlaintext {
 		return c.in.setErrorLocked(c.sendAlert(alertRecordOverflow))
@@ -845,6 +852,12 @@ func (c *Conn) sendAlertLocked(err alert) error {
 	if c.quic != nil {
 		return c.out.setErrorLocked(&net.OpError{Op: "local error", Err: err})
 	}
+	if c.suppressEarlyAlerts() {
+		if err == alertCloseNotify {
+			return nil
+		}
+		return c.out.setErrorLocked(&net.OpError{Op: "local error", Err: err})
+	}
 
 	switch err {
 	case alertNoRenegotiation, alertCloseNotify:
@@ -980,6 +993,13 @@ var outBufPool = sync.Pool{
 // writeRecordLocked writes a TLS record with the given type and payload to the
 // connection and updates the record layer state.
 func (c *Conn) writeRecordLocked(typ recordType, data []byte) (int, error) {
+	if typ == recordTypeApplicationData && c.clientRecordContext != nil && c.isHandshakeComplete.Load() {
+		if hooks := c.config.ClientRecordHooks; hooks.Write != nil {
+			if n, handled, err := hooks.Write(data, c.write); handled || err != nil {
+				return n, err
+			}
+		}
+	}
 	if c.quic != nil {
 		if typ != recordTypeHandshake {
 			return 0, errors.New("tls: internal error: sending non-handshake message to QUIC transport")
@@ -1034,6 +1054,9 @@ func (c *Conn) writeRecordLocked(typ recordType, data []byte) (int, error) {
 		if err != nil {
 			return n, err
 		}
+		if c.observingClientFinished {
+			c.config.ClientRecordHooks.ClientFinished(append([]byte(nil), outBuf...))
+		}
 		if _, err := c.write(outBuf); err != nil {
 			return n, err
 		}
@@ -1065,6 +1088,10 @@ func (c *Conn) writeHandshakeRecord(msg handshakeMessage, transcript transcriptH
 		transcript.Write(data)
 	}
 
+	if _, finished := msg.(*finishedMsg); finished && c.clientRecordContext != nil && c.config.ClientRecordHooks.ClientFinished != nil {
+		c.observingClientFinished = true
+		defer func() { c.observingClientFinished = false }()
+	}
 	return c.writeRecordLocked(recordTypeHandshake, data)
 }
 
@@ -1573,6 +1600,9 @@ func (c *Conn) handshakeContext(ctx context.Context) (ret error) {
 	c.handshakeErr = c.handshakeFn(handshakeCtx)
 	if c.handshakeErr == nil {
 		c.handshakes++
+	} else if c.suppressEarlyAlerts() {
+		c.sendBuf = nil
+		c.buffering = false
 	} else {
 		// If an error occurred during the handshake try to flush the
 		// alert that might be left in the buffer.

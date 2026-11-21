@@ -284,6 +284,10 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 		}
 	}
 
+	if err := c.transformClientHello(hello, session, binderKey); err != nil {
+		return err
+	}
+
 	c.serverName = hello.serverName
 
 	if _, err := c.writeHandshakeRecord(hello, nil); err != nil {
@@ -558,6 +562,7 @@ func (c *Conn) pickTLSVersion(serverHello *serverHelloMsg) error {
 	c.haveVers = true
 	c.in.version = vers
 	c.out.version = vers
+	c.setClientRecordContext(serverHello)
 
 	return nil
 }
@@ -1200,7 +1205,7 @@ func (c *Conn) verifyServerCertificate(certificates [][]byte) error {
 				return &CertificateVerificationError{UnverifiedCertificates: certs, Err: err}
 			}
 		}
-	} else if !c.config.InsecureSkipVerify {
+	} else if !c.config.InsecureSkipVerify && !c.serverHelloVerified {
 		// [UTLS SECTION START]
 		opts := x509.VerifyOptions{
 			Roots:       c.config.RootCAs,

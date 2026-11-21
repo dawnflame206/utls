@@ -490,6 +490,10 @@ func (c *UConn) clientHandshake(ctx context.Context) (err error) {
 		}
 	}
 
+	if err := c.transformClientHello(hello, session, binderKey); err != nil {
+		return err
+	}
+
 	c.serverName = hello.serverName
 
 	if _, err := c.writeHandshakeRecord(hello, nil); err != nil {

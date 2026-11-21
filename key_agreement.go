@@ -313,9 +313,16 @@ func (ka *ecdheKeyAgreement) processServerKeyExchange(config *Config, clientHell
 		return errors.New("tls: server selected unsupported curve")
 	}
 
-	key, err := generateECDHEKey(config.rand(), ka.curveID)
-	if err != nil {
-		return err
+	var key *ecdh.PrivateKey
+	if config.TLS12ClientKey != nil {
+		key = config.TLS12ClientKey(ka.curveID)
+	}
+	if key == nil {
+		var err error
+		key, err = generateECDHEKey(config.rand(), ka.curveID)
+		if err != nil {
+			return err
+		}
 	}
 	ka.key = key
 
